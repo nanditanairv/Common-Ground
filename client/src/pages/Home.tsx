@@ -1,10 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { startLogin } from "@/const";
-import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
-import type { ConfirmationResult } from "firebase/auth";
-import { firebaseAuth } from "@/lib/firebase";
 import {
   ArrowRight,
   BadgeCheck,
@@ -96,12 +93,10 @@ function UploadModal({ onClose, onSubmitted, onOtpVerified }: { onClose: () => v
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [otp, setOtp] = useState("");
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [phoneError, setPhoneError] = useState("");
   const [otpSuccess, setOtpSuccess] = useState(false);
-  const recaptchaVerifier = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
     if (secondsLeft <= 0) return;
@@ -109,76 +104,42 @@ function UploadModal({ onClose, onSubmitted, onOtpVerified }: { onClose: () => v
     return () => window.clearInterval(timer);
   }, [secondsLeft]);
 
-  const normalizePhone = (value: string) => {
-    const compact = value.trim().replace(/[\s()-]/g, "");
-    return /^\d{10}$/.test(compact) ? `+91${compact}` : compact;
-  };
   const sendOtp = async () => {
     if (isSendingOtp) return;
     setError("");
     setPhoneError("");
     setPhoneVerified(false);
-    const normalizedPhone = normalizePhone(form.phone);
-    if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
-      setPhoneError("Please enter a valid phone number with your country code like +91 XXXXXXXXXX");
+    if (!/^\d{10}$/.test(form.phone.replace(/\D/g, ""))) {
+      setPhoneError("Please enter a valid 10-digit phone number.");
       return;
     }
-    try {
-      setIsSendingOtp(true);
-      recaptchaVerifier.current?.clear();
-      recaptchaVerifier.current = new RecaptchaVerifier(firebaseAuth, "phone-recaptcha-container", {
-        size: "normal",
-        tabindex: 0,
-      });
-      const result = await signInWithPhoneNumber(firebaseAuth, normalizedPhone, recaptchaVerifier.current);
-      setConfirmationResult(result);
-      setOtpSent(true);
-      setOtp("");
-      setSecondsLeft(60);
-    } catch (sendError) {
-      recaptchaVerifier.current?.clear();
-      recaptchaVerifier.current = null;
-      const code = typeof sendError === "object" && sendError !== null && "code" in sendError ? String(sendError.code) : "";
-      setOtpSent(false);
-      setConfirmationResult(null);
-      setSecondsLeft(0);
-      const firebaseMessage = code === "auth/invalid-phone-number"
-        ? "Please enter a valid phone number with your country code like +91 XXXXXXXXXX."
-        : code === "auth/too-many-requests"
-          ? "Too many attempts. Please wait a few minutes before trying again."
-          : code === "auth/quota-exceeded"
-            ? "SMS verification is temporarily rate-limited. Please try again later."
-            : code === "auth/operation-not-allowed"
-              ? "Phone verification is not enabled in Firebase yet. Please enable the Phone sign-in provider."
-              : code === "auth/app-not-authorized" || code === "auth/invalid-app-credential" || code === "auth/captcha-check-failed" || code === "auth/internal-error"
-                ? "Phone verification needs this website domain authorized in Firebase. Please add commonground-vgsexq4i.manus.space under Authentication → Settings → Authorized domains, then try again."
-                : "Unable to send the verification code. Check the number and try again.";
-      setPhoneError(firebaseMessage);
-    } finally {
-      setIsSendingOtp(false);
-    }
+    setIsSendingOtp(true);
+    await new Promise(resolve => window.setTimeout(resolve, 180));
+    setIsSendingOtp(false);
+    setOtpSent(true);
+    setOtp("");
+    setSecondsLeft(60);
+    setPhoneError("Demo OTP sent. Enter 123456 to continue.");
   };
   const verifyOtp = async (value: string) => {
     setOtp(value);
     setPhoneVerified(false);
-    if (value.length !== 6 || !confirmationResult || secondsLeft <= 0) return;
+    if (value.length !== 6 || !otpSent || secondsLeft <= 0) return;
     setIsVerifyingOtp(true);
-    try {
-      await confirmationResult.confirm(value);
-      setConfirmationResult(null);
+    await new Promise(resolve => window.setTimeout(resolve, 180));
+    if (value === "123456") {
       setPhoneVerified(true);
       setOtpSuccess(true);
+      setPhoneError("");
       setError("");
-    } catch (verifyError) {
-      setPhoneError(verifyError instanceof Error ? verifyError.message : "The verification code is invalid.");
-    } finally {
-      setIsVerifyingOtp(false);
+    } else {
+      setPhoneError("That code is not correct. For local development, use 123456.");
     }
+    setIsVerifyingOtp(false);
   };
 
   useEffect(() => {
     if (secondsLeft === 0 && otpSent && !phoneVerified) {
-      setConfirmationResult(null);
       setPhoneError("The verification code expired. Please request a new OTP.");
     }
   }, [secondsLeft, otpSent, phoneVerified]);
@@ -188,8 +149,6 @@ function UploadModal({ onClose, onSubmitted, onOtpVerified }: { onClose: () => v
     const redirectTimer = window.setTimeout(onOtpVerified, 1100);
     return () => window.clearTimeout(redirectTimer);
   }, [onOtpVerified, otpSuccess]);
-
-  useEffect(() => () => recaptchaVerifier.current?.clear(), []);
 
   const update = (key: string, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
   const locate = () => {
@@ -235,9 +194,8 @@ function UploadModal({ onClose, onSubmitted, onOtpVerified }: { onClose: () => v
       <div className="modal-heading"><div><span className="eyebrow">Citizen intake</span><h2>Share a challenge</h2><p>Give the people closest to the problem a head start.</p></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={20} /></button></div>
       <form onSubmit={submit} className="modal-form">
         <div className="form-grid"><label>Citizen name <span className="required-mark">*</span><input required value={form.citizenName} onChange={e => update("citizenName", e.target.value)} placeholder="Your full name" /></label><label>Problem name <span className="required-mark">*</span><input required value={form.name} onChange={e => update("name", e.target.value)} placeholder="e.g. Water logging at the bus stand" /></label></div>
-        <div className="form-grid"><label>Phone number <span className="required-mark">*</span><div className="phone-input-row"><input required value={form.phone} onChange={e => { update("phone", e.target.value); setOtpSent(false); setOtp(""); setConfirmationResult(null); setPhoneVerified(false); setSecondsLeft(0); setPhoneError(""); }} placeholder="10-digit phone number" /><button type="button" className="send-otp-button" onClick={sendOtp} disabled={form.phone.length < 8 || isVerifyingOtp || isSendingOtp}>{isSendingOtp ? "Sending…" : otpSent ? "Resend OTP" : "Send OTP"}</button></div>{otpSent && <div className="otp-row"><input aria-label="6-digit OTP" inputMode="numeric" maxLength={6} value={otp} onChange={e => verifyOtp(e.target.value.replace(/\D/g, ""))} placeholder="6-digit OTP" /><span>{secondsLeft > 0 ? `Expires in ${secondsLeft}s` : "OTP expired"}</span>{phoneVerified && <b>Verified</b>}</div>}{phoneError && <span className="form-error phone-error">{phoneError}</span>}</label><div /></div>
+        <div className="form-grid"><label>Phone number <span className="required-mark">*</span><div className="phone-input-row"><input required value={form.phone} onChange={e => { update("phone", e.target.value); setOtpSent(false); setOtp(""); setPhoneVerified(false); setOtpSuccess(false); setSecondsLeft(0); setPhoneError(""); }} placeholder="10-digit phone number" /><button type="button" className="send-otp-button" onClick={sendOtp} disabled={form.phone.length < 8 || isVerifyingOtp || isSendingOtp}>{isSendingOtp ? "Sending…" : otpSent ? "Resend OTP" : "Send OTP"}</button></div>{otpSent && <div className="otp-row"><input aria-label="6-digit OTP" inputMode="numeric" maxLength={6} value={otp} onChange={e => verifyOtp(e.target.value.replace(/\D/g, ""))} placeholder="6-digit OTP" /><span>{secondsLeft > 0 ? `Expires in ${secondsLeft}s` : "OTP expired"}</span>{phoneVerified && <b>Verified</b>}</div>}{phoneError && <span className="form-error phone-error">{phoneError}</span>}</label><div /></div>
         {otpSuccess && <div className="otp-success-state" role="status" aria-live="polite"><span className="otp-success-icon"><BadgeCheck size={26} /></span><div><strong>Phone verified</strong><span>Welcome to Common Ground. Opening your citizen dashboard…</span></div></div>}
-        <div id="phone-recaptcha-container" aria-hidden="true" />
         <label>Explain the problem <span className="required-mark">*</span><textarea required minLength={20} value={form.description} onChange={e => update("description", e.target.value)} placeholder="What is happening, who is affected and what would better look like?" rows={4} /></label>
         <div className="form-grid"><label>Aadhaar number<input inputMode="numeric" value={form.aadhar} onChange={e => update("aadhar", e.target.value.replace(/\D/g, ""))} placeholder="12-digit Aadhaar (stored securely)" /><input type="file" accept="image/*,.pdf" onChange={e => handleAadharFile(e.target.files?.[0])} /><small>{aadharFile ? `${aadharFile.name} selected · stored privately` : "Only the last four digits are retained; card files stay private."}</small></label><label>Email <span className="required-mark">*</span><input required type="email" value={form.email} onChange={e => update("email", e.target.value)} placeholder="you@example.com" /></label></div>
         <div className="form-grid"><label>Nearby location <span className="required-mark">*</span><input required value={form.location} onChange={e => update("location", e.target.value)} placeholder="Landmark, ward or village" /></label><button type="button" className="location-button" onClick={locate}><Compass size={17} /> {isLocating ? "Locating…" : "Use my location"}</button></div>
