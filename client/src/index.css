@@ -82,3 +82,13 @@ h1, h2, h3, p { margin-top: 0; }h1, h2, h3 { font-weight: 600; letter-spacing: -
   .hero-art { z-index: 1; }
   .hero-copy { z-index: 4; }
 }
+
+.otp-success-state { display: flex; align-items: center; gap: 12px; margin: 12px 0 4px; padding: 13px 14px; border: 1px solid #b9d9c0; background: #eef8ef; color: #245a43; border-radius: 8px; animation: otp-success-in 320ms cubic-bezier(.23,1,.32,1) both; }
+.otp-success-state strong, .otp-success-state span { display: block; }
+.otp-success-state strong { font-size: 13px; }
+.otp-success-state div span { margin-top: 3px; color: #5b7b68; font-size: 11px; }
+.otp-success-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; border-radius: 50%; color: #fff; background: #3d8b66; animation: otp-success-pop 420ms cubic-bezier(.23,1,.32,1) 70ms both; }
+@keyframes otp-success-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes otp-success-pop { 0% { opacity: 0; transform: scale(.7); } 65% { opacity: 1; transform: scale(1.08); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .otp-success-state, .otp-success-icon { animation: none; } }
+@media (max-width: 620px) { .otp-success-state { align-items: flex-start; } .otp-success-state div span { line-height: 1.4; } }
