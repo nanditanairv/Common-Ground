@@ -93,6 +93,8 @@ function UploadModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
   const [isLocating, setIsLocating] = useState(false);
   const [error, setError] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
   const [otp, setOtp] = useState("");
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
@@ -106,20 +108,22 @@ function UploadModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
     return () => window.clearInterval(timer);
   }, [secondsLeft]);
 
-  const phoneVerified = Boolean(confirmationResult === null && otpSent && secondsLeft > 0 && otp.length === 6);
   const normalizePhone = (value: string) => {
     const compact = value.trim().replace(/[\s()-]/g, "");
     return /^\d{10}$/.test(compact) ? `+91${compact}` : compact;
   };
   const sendOtp = async () => {
+    if (isSendingOtp) return;
     setError("");
     setPhoneError("");
+    setPhoneVerified(false);
     const normalizedPhone = normalizePhone(form.phone);
     if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
       setPhoneError("Please enter a valid phone number with your country code like +91 XXXXXXXXXX");
       return;
     }
     try {
+      setIsSendingOtp(true);
       recaptchaVerifier.current?.clear();
       recaptchaVerifier.current = new RecaptchaVerifier(firebaseAuth, "phone-recaptcha-container", { size: "invisible" });
       const result = await signInWithPhoneNumber(firebaseAuth, normalizedPhone, recaptchaVerifier.current);
@@ -131,16 +135,23 @@ function UploadModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
       recaptchaVerifier.current?.clear();
       recaptchaVerifier.current = null;
       const code = typeof sendError === "object" && sendError !== null && "code" in sendError ? String(sendError.code) : "";
-      setPhoneError(code === "auth/invalid-phone-number" ? "Please enter a valid phone number with your country code like +91 XXXXXXXXXX" : sendError instanceof Error ? sendError.message : "Unable to send the verification code. Please try again.");
+      setOtpSent(false);
+      setConfirmationResult(null);
+      setSecondsLeft(0);
+      setPhoneError(code === "auth/invalid-phone-number" ? "Please enter a valid phone number with your country code like +91 XXXXXXXXXX" : code === "auth/too-many-requests" ? "Too many attempts. Please wait a few minutes before trying again." : "Unable to send the verification code. Check the number and try again.");
+    } finally {
+      setIsSendingOtp(false);
     }
   };
   const verifyOtp = async (value: string) => {
     setOtp(value);
+    setPhoneVerified(false);
     if (value.length !== 6 || !confirmationResult || secondsLeft <= 0) return;
     setIsVerifyingOtp(true);
     try {
       await confirmationResult.confirm(value);
       setConfirmationResult(null);
+      setPhoneVerified(true);
       setError("");
     } catch (verifyError) {
       setPhoneError(verifyError instanceof Error ? verifyError.message : "The verification code is invalid.");
@@ -148,6 +159,13 @@ function UploadModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
       setIsVerifyingOtp(false);
     }
   };
+
+  useEffect(() => {
+    if (secondsLeft === 0 && otpSent && !phoneVerified) {
+      setConfirmationResult(null);
+      setPhoneError("The verification code expired. Please request a new OTP.");
+    }
+  }, [secondsLeft, otpSent, phoneVerified]);
 
   useEffect(() => () => recaptchaVerifier.current?.clear(), []);
 
@@ -195,7 +213,7 @@ function UploadModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
       <div className="modal-heading"><div><span className="eyebrow">Citizen intake</span><h2>Share a challenge</h2><p>Give the people closest to the problem a head start.</p></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={20} /></button></div>
       <form onSubmit={submit} className="modal-form">
         <div className="form-grid"><label>Citizen name <span className="required-mark">*</span><input required value={form.citizenName} onChange={e => update("citizenName", e.target.value)} placeholder="Your full name" /></label><label>Problem name <span className="required-mark">*</span><input required value={form.name} onChange={e => update("name", e.target.value)} placeholder="e.g. Water logging at the bus stand" /></label></div>
-        <div className="form-grid"><label>Phone number <span className="required-mark">*</span><div className="phone-input-row"><input required value={form.phone} onChange={e => { update("phone", e.target.value); setOtpSent(false); setOtp(""); setConfirmationResult(null); setPhoneError(""); }} placeholder="10-digit phone number" /><button type="button" className="send-otp-button" onClick={sendOtp} disabled={form.phone.length < 8 || isVerifyingOtp}>{otpSent ? "Resend OTP" : "Send OTP"}</button></div>{otpSent && <div className="otp-row"><input aria-label="6-digit OTP" inputMode="numeric" maxLength={6} value={otp} onChange={e => verifyOtp(e.target.value.replace(/\D/g, ""))} placeholder="6-digit OTP" /><span>{secondsLeft > 0 ? `Expires in ${secondsLeft}s` : "OTP expired"}</span>{phoneVerified && <b>Verified</b>}</div>}{phoneError && <span className="form-error phone-error">{phoneError}</span>}</label><div /></div>
+        <div className="form-grid"><label>Phone number <span className="required-mark">*</span><div className="phone-input-row"><input required value={form.phone} onChange={e => { update("phone", e.target.value); setOtpSent(false); setOtp(""); setConfirmationResult(null); setPhoneVerified(false); setSecondsLeft(0); setPhoneError(""); }} placeholder="10-digit phone number" /><button type="button" className="send-otp-button" onClick={sendOtp} disabled={form.phone.length < 8 || isVerifyingOtp || isSendingOtp}>{isSendingOtp ? "Sending…" : otpSent ? "Resend OTP" : "Send OTP"}</button></div>{otpSent && <div className="otp-row"><input aria-label="6-digit OTP" inputMode="numeric" maxLength={6} value={otp} onChange={e => verifyOtp(e.target.value.replace(/\D/g, ""))} placeholder="6-digit OTP" /><span>{secondsLeft > 0 ? `Expires in ${secondsLeft}s` : "OTP expired"}</span>{phoneVerified && <b>Verified</b>}</div>}{phoneError && <span className="form-error phone-error">{phoneError}</span>}</label><div /></div>
         <div id="phone-recaptcha-container" aria-hidden="true" />
         <label>Explain the problem <span className="required-mark">*</span><textarea required minLength={20} value={form.description} onChange={e => update("description", e.target.value)} placeholder="What is happening, who is affected and what would better look like?" rows={4} /></label>
         <div className="form-grid"><label>Aadhaar number<input inputMode="numeric" value={form.aadhar} onChange={e => update("aadhar", e.target.value.replace(/\D/g, ""))} placeholder="12-digit Aadhaar (stored securely)" /><input type="file" accept="image/*,.pdf" onChange={e => handleAadharFile(e.target.files?.[0])} /><small>{aadharFile ? `${aadharFile.name} selected · stored privately` : "Only the last four digits are retained; card files stay private."}</small></label><label>Email <span className="required-mark">*</span><input required type="email" value={form.email} onChange={e => update("email", e.target.value)} placeholder="you@example.com" /></label></div>
