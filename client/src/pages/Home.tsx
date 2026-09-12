@@ -125,7 +125,10 @@ function UploadModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
     try {
       setIsSendingOtp(true);
       recaptchaVerifier.current?.clear();
-      recaptchaVerifier.current = new RecaptchaVerifier(firebaseAuth, "phone-recaptcha-container", { size: "invisible" });
+      recaptchaVerifier.current = new RecaptchaVerifier(firebaseAuth, "phone-recaptcha-container", {
+        size: "normal",
+        tabindex: 0,
+      });
       const result = await signInWithPhoneNumber(firebaseAuth, normalizedPhone, recaptchaVerifier.current);
       setConfirmationResult(result);
       setOtpSent(true);
@@ -138,7 +141,18 @@ function UploadModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
       setOtpSent(false);
       setConfirmationResult(null);
       setSecondsLeft(0);
-      setPhoneError(code === "auth/invalid-phone-number" ? "Please enter a valid phone number with your country code like +91 XXXXXXXXXX" : code === "auth/too-many-requests" ? "Too many attempts. Please wait a few minutes before trying again." : "Unable to send the verification code. Check the number and try again.");
+      const firebaseMessage = code === "auth/invalid-phone-number"
+        ? "Please enter a valid phone number with your country code like +91 XXXXXXXXXX."
+        : code === "auth/too-many-requests"
+          ? "Too many attempts. Please wait a few minutes before trying again."
+          : code === "auth/quota-exceeded"
+            ? "SMS verification is temporarily rate-limited. Please try again later."
+            : code === "auth/operation-not-allowed"
+              ? "Phone verification is not enabled in Firebase yet. Please enable the Phone sign-in provider."
+              : code === "auth/app-not-authorized" || code === "auth/invalid-app-credential" || code === "auth/captcha-check-failed" || code === "auth/internal-error"
+                ? "Phone verification needs this website domain authorized in Firebase. Please add commonground-vgsexq4i.manus.space under Authentication → Settings → Authorized domains, then try again."
+                : "Unable to send the verification code. Check the number and try again.";
+      setPhoneError(firebaseMessage);
     } finally {
       setIsSendingOtp(false);
     }
